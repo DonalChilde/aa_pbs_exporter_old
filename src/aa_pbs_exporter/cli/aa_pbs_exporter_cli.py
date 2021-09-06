@@ -5,10 +5,10 @@ from logging import Logger
 
 import click
 
-from aa_pbs_exporter.app_config import LOGGER
+# from aa_pbs_exporter.app_config import LOGGER
 from aa_pbs_exporter.cli.example import hello
 
-logger = LOGGER
+logger = Logger(__name__)
 
 
 @click.group()

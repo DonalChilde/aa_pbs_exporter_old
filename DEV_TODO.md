@@ -4,6 +4,8 @@
 
 ## Cli example
 
+- Logging
+  - Configure a logger at app root with a rotating file handler.
 - Testing
   - cmd line tests
   - test resources

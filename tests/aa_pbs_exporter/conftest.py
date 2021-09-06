@@ -45,7 +45,7 @@ def configure_file_logger(
     log_dir_path: Path = Path(log_dir)
     log_dir_path.mkdir(parents=True, exist_ok=True)
     log_file_path = log_dir_path / Path(log_file_name)
-    handler = log_file_handler(log_file_path, log_level=log_level)
+    handler = log_file_handler(log_file_path, log_level=int(log_level))
     logger_.addHandler(handler)
     logger_.setLevel(log_level)
     ############################################################
@@ -125,7 +125,8 @@ def json_resources_() -> Dict[str, FileResource]:
 
 
 def make_file_resources_from_resource_path(
-    resource_path, exclude_suffixes: Optional[List[str]] = None
+    resource_path,
+    exclude_suffixes: Optional[List[str]] = None,
 ):
     file_paths = collect_resource_paths(resource_path, exclude_suffixes)
     file_resources = {}
@@ -152,14 +153,61 @@ def collect_resource_paths(
     return result
 
 
-def make_file_resource(resource_path, resource_name, logger) -> FileResource:
+@pytest.fixture(scope="session")
+def pairing_package_pdf(logger) -> FileResource:
+    resource_path = "tests.aa_pbs_exporter.resources"
+    resource_name = "PBS_PHX_October_2021_20210905134803.pdf"
+    return load_file_resource(
+        resource_path=resource_path,
+        resource_name=resource_name,
+        logger=logger,
+        path_only=True,
+    )
+
+
+def load_file_resource(
+    resource_path: str,
+    resource_name: str,
+    logger: logging.Logger,
+    path_only: bool = False,
+    read_text: bool = True,
+) -> FileResource:
+    """
+    Load a file resource.
+
+    Load a string or bytes as a FileResource. Can optionaly return only a path to a
+    file, with None as data.
+
+    Args:
+        resource_path ([type]): [description]
+        resource_name ([type]): [description]
+        logger ([type]): [description]
+        path_only ([type], optional): [description]. Defaults to False.
+        read_text ([type], optional): [description]. Defaults to True.
+
+    Raises:
+        ex: [description]
+
+    Returns:
+        FileResource: [description]
+    """
     try:
         with resources.path(resource_path, resource_name) as data_path:
-            data = data_path.read_text()
-            logger.debug(
-                "Loaded resource file %s from %s", resource_name, resource_path
-            )
-            return FileResource(file_path=data_path, data=data)
+            data: Optional[Union[str, bytes]] = None
+            if read_text:
+                if not path_only:
+                    data = data_path.read_text()
+                    logger.debug(
+                        "Loaded resource file %s from %s", resource_name, resource_path
+                    )
+                return FileResource(file_path=data_path, data=data)
+            else:
+                if not path_only:
+                    data = data_path.read_bytes()
+                    logger.debug(
+                        "Loaded resource file %s from %s", resource_name, resource_path
+                    )
+                return FileResource(file_path=data_path, data=data)
     except Exception as ex:
         logger.exception(
             "Unable to load resource file %s from %s Error msg %s",
