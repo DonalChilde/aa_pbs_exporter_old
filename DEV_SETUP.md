@@ -19,3 +19,11 @@ git clone git@github.com:DonalChilde/aa_pbs_exporter.git
 ```
 
 TODO project setup from github
+
+## Tips and fixes
+
+To run git commit without git precommit hooks -
+
+```bash
+git commit -m "Some comments" --no-verify
+```
