@@ -1,12 +1,39 @@
 from collections import deque
-from typing import Any, Deque, Iterable, Optional, Sequence
+from typing import Any, Deque, Optional, Sequence
+
+
+class ChunkParserException(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+
+
+class FailedParseException(ChunkParserException):
+    def __init__(
+        self,
+        msg: Optional[str],
+        chunk: "Chunk",
+        parser: "Parser",
+        context: "ParseContext",
+        *args: object,
+    ) -> None:
+        if msg is None:
+            msg = "Failed to parse. No details available."
+        message = f"\explaination: {msg}\nchunk: {chunk!r}\nparser: {parser!r}\ncontext: {context!r}"
+        super().__init__(message)
+        self.msg = msg
+        self.chunk = chunk
+        self.parser = parser
+        self.context = context
 
 
 class Chunk:
-    def __init__(self, key, text_chunk: str) -> None:
+    def __init__(self, key, text: str) -> None:
         # can make this an object with page number, line number
         self.key = key
-        self.text_chunk = text_chunk
+        self.text = text
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(key: {self.key!r}, text: {self.text})"
 
 
 class ParseContext:
@@ -37,6 +64,9 @@ class Parser:
     def state_key(self) -> str:
         return self.__class__.__name__
 
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}>()"
+
 
 class ParseInstruction:
     def __init__(
@@ -61,7 +91,11 @@ class ParseListener:
         pass
 
     def report_not_match(
-        self, chunk: Chunk, instruction: ParseInstruction, context: ParseContext
+        self,
+        explaination: str,
+        chunk: Chunk,
+        instruction: ParseInstruction,
+        context: ParseContext,
     ):
         pass
 
@@ -94,8 +128,8 @@ class ChunkParser:
             parse_state = context.parse_state
             instructions = self.parse_schema.parse_instructions(parse_state=parse_state)
             for instruction in instructions:
-                result = instruction.parser.parse_chunk(context, chunk)
-                if result is not None:
+                try:
+                    result = instruction.parser.parse_chunk(context, chunk)
                     instruction.parser.parse_callback(context, result)
                     context.parse_results.append(result)
                     if instruction.advance_state_on_match:
@@ -103,7 +137,9 @@ class ChunkParser:
                     for listener in self.listeners:
                         listener.report_match(chunk, instruction, context)
                     return
-                for listener in self.listeners:
-                    listener.report_not_match(chunk, instruction, context)
+                except FailedParseException as ex:
+
+                    for listener in self.listeners:
+                        listener.report_not_match(ex.msg, chunk, instruction, context)
             for listener in self.listeners:
                 listener.report_no_matches(chunk, instructions, context)
