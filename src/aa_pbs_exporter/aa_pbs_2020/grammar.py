@@ -18,14 +18,17 @@ def string_to_time(s: str, loc: int, tocs: pp.ParseResults):
 
 
 def duration_to_timedelta(s: str, loc: int, tocs: pp.ParseResults):
-    print(tocs.dump())
     return timedelta(hours=int(tocs[0]["hours"]), minutes=int(tocs[0]["minutes"]))
 
 
-DAY_NUMERAL = pp.Word(pp.nums, exact=2)("day")
+def string_to_int(s: str, loc: int, tocs: pp.ParseResults):
+    return int(tocs[0])
+
+
+DAY_NUMERAL = pp.Word(pp.nums, exact=2)("day").set_parse_action(string_to_int)
 SHORT_MONTH = pp.Word(pp.alphas, exact=3)("month")
-MONTH_NUMERAL = pp.Word(pp.nums, exact=2)("month")
-YEAR = pp.Word(pp.nums, exact=4)("year")
+MONTH_NUMERAL = pp.Word(pp.nums, exact=2)("month").set_parse_action(string_to_int)
+YEAR = pp.Word(pp.nums, exact=4)("year").set_parse_action(string_to_int)
 DATE = pp.Combine(DAY_NUMERAL + SHORT_MONTH + YEAR).set_parse_action(
     short_string_to_date
 )
@@ -37,16 +40,22 @@ BASE = pp.Word(pp.alphas, exact=3)("base")
 EQUIPMENT = pp.Word(pp.nums, exact=3)("equipment")
 DIVISION = pp.Literal("INTL") | pp.Literal("DOM")
 SEQ_NUMBER = pp.Word(pp.nums, min=1)("seq_number")
-OPS = pp.Word(pp.nums, min=1)("ops")
+OPS = pp.Word(pp.nums, min=1)("ops").set_parse_action(string_to_int)
 POSITIONS = pp.one_of("CA FO", as_keyword=True)
 CALENDAR_HEADER = pp.Literal("MO") + "TU" + "WE" + "TH" + "FR" + "SA" + "SU"
-CALENDAR_ENTRY = pp.Word("-", exact=2, as_keyword=True) | pp.Word(
-    pp.nums, as_keyword=True
+CALENDAR_ENTRY = pp.Or(
+    [
+        pp.Word("-", exact=2, as_keyword=True),
+        pp.Word(pp.nums, exact=1, as_keyword=True).set_parse_action(string_to_int),
+        pp.Word(pp.nums, exact=2, as_keyword=True).set_parse_action(string_to_int),
+    ]
 )
-DUTY_PERIOD = pp.Word(pp.nums, exact=1)("duty_period")
+DUTY_PERIOD = pp.Word(pp.nums, exact=1)("duty_period").set_parse_action(string_to_int)
 EQUIPMENT_CODE = pp.Word(pp.nums, exact=2, as_keyword=True)
 DAY_OF_SEQUENCE = pp.Group(
-    pp.Word(pp.nums, exact=1)("d") + "/" + pp.Word(pp.nums, exact=1)("a")
+    pp.Word(pp.nums, exact=1).set_parse_action(string_to_int)("d")
+    + "/"
+    + pp.Word(pp.nums, exact=1).set_parse_action(string_to_int)("a")
 )("day_of_sequence")
 FLIGHT_NUMBER = pp.Word(pp.nums, as_keyword=True)("flight_number")
 CITY_CODE = pp.Word(pp.alphas, exact=3, as_keyword=True)
@@ -54,19 +63,20 @@ CREW_MEAL = pp.Word("BLD", exact=1, as_keyword=True)
 DURATION = pp.Combine(
     pp.Word(pp.nums, min=1)("hours") + "." + pp.Word(pp.nums, exact=2)("minutes")
 ).set_parse_action(duration_to_timedelta)
+PHONE_NUMBER = pp.Combine(pp.Word(pp.nums, min=4, as_keyword=True))
 # COCKPIT  ISSUED 03SEP2021  EFF 01OCT2021               PHX 320  INTL                             PAGE  2205
 FOOTER = (
     pp.StringStart()
     + "COCKPIT"
     + "ISSUED"
-    + DATE("issue_date")
+    + DATE("issued")
     + "EFF"
-    + DATE("effective_date")
+    + DATE("effective")
     + BASE
     + EQUIPMENT
     + DIVISION("division")
     + "PAGE"
-    + pp.Word(pp.nums)("internal_page_no")
+    + pp.Word(pp.nums)("internal_page")
     + pp.StringEnd()
 )
 #   DAY          --DEPARTURE--    ---ARRIVAL---                GRND/        REST/
@@ -118,7 +128,7 @@ SEQ_HEADER = (
     + pp.StringEnd()
 )
 #                RPT 0600/0600                                                                      -- -- --
-SEQ_REPORT = (
+REPORT = (
     pp.StringStart()
     + "RPT"
     + TIME("report_local")
@@ -132,7 +142,7 @@ FLIGHT = (
     pp.StringStart()
     + DUTY_PERIOD
     + DAY_OF_SEQUENCE
-    + EQUIPMENT_CODE
+    + EQUIPMENT_CODE("equipment_code")
     + FLIGHT_NUMBER
     + CITY_CODE("departure_city")
     + TIME("departure_local")
@@ -145,6 +155,69 @@ FLIGHT = (
     + TIME("arrival_home")
     + DURATION("block")
     + DURATION("total_pay")
+    + pp.Opt("X")("equipment_change")
     + pp.ZeroOrMore(CALENDAR_ENTRY)("calendar_entries")
     + pp.StringEnd()
+)
+#                                 RLS 2202/2002   7.28   0.00   7.28  11.36       11.06 -- -- -- -- -- -- --
+RELEASE = (
+    pp.StringStart()
+    + "RLS"
+    + TIME("release_local")
+    + "/"
+    + TIME("release_home")
+    + DURATION("block")
+    + DURATION("synth")
+    + DURATION("total_pay")
+    + DURATION("duty")
+    + DURATION("flight_duty")
+    + pp.ZeroOrMore(CALENDAR_ENTRY)("calendar_entries")
+    + pp.StringEnd()
+)
+#                ORD HYATT REGENCY ORD                       18476961234    16.03
+#                DFW MARRIOTT DFW AP                         19729298800    13.31       -- -- -- -- -- -- --
+#                SEA HOTEL INFO IN CCI/CREW PORTAL                          11.33
+HOTEL = (
+    pp.StringStart()
+    + CITY_CODE("layover_city")
+    + pp.original_text_for(
+        pp.Opt(
+            pp.OneOrMore(
+                ~PHONE_NUMBER + ~DURATION + pp.Word(pp.printables, as_keyword=True)
+            ),
+            default=None,
+        )
+    )("hotel")
+    + pp.Opt(~DURATION + PHONE_NUMBER, default=None)("hotel_phone")
+    + DURATION("rest")
+    + pp.ZeroOrMore(CALENDAR_ENTRY)("calendar_entries")
+    + pp.StringEnd()
+)
+#                    SKYHOP GLOBAL                           9544000412                 -- -- -- -- -- -- 31
+TRANSPORTATION = (
+    pp.StringStart()
+    + pp.original_text_for(
+        pp.Opt(
+            pp.OneOrMore(~PHONE_NUMBER + pp.Word(pp.printables, as_keyword=True)),
+            default=None,
+        )
+    )("transportation")
+    + pp.Opt(~CALENDAR_ENTRY + PHONE_NUMBER, default=None)("transportation_phone")
+    + pp.ZeroOrMore(CALENDAR_ENTRY)("calendar_entries")
+    + pp.StringEnd()
+)
+# TTL                                             21.33   0.00  21.33        73.59
+TOTAL = (
+    pp.StringStart()
+    + "TTL"
+    + DURATION("block")
+    + DURATION("synth")
+    + DURATION("total_pay")
+    + DURATION("tafb")
+    + pp.ZeroOrMore(CALENDAR_ENTRY)("calendar_entries")
+    + pp.StringEnd()
+)
+# PHX 320
+BASE_EQUIPMENT = (
+    pp.StringStart() + CITY_CODE("base") + EQUIPMENT("equipment") + pp.StringEnd()
 )

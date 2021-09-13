@@ -53,6 +53,9 @@ class ParseResult:
         self.parser = parser
         self.data = data
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(chunk: {self.chunk!r}, parser: {self.parser!r}, data: {self.data!r})"
+
 
 class Parser:
     def parse_chunk(self, context: ParseContext, chunk: Chunk) -> ParseResult:
